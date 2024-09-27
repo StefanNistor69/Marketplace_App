@@ -20,6 +20,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const PORT = process.env.PORT || 5002;
+const CACHE_EXPIRATION = 10 * 5; // 5 minutes TTL for caching
 
 // Middleware to parse incoming JSON requests
 app.use(express.json());
@@ -55,25 +56,87 @@ const notifyAllClients = (message) => {
   });
 };
 
-// Expose an endpoint to just log "Notification received" and store it in Redis
-app.post('/notify-upload', async (req, res) => {
-    // Simply print a static message
-    const notificationMessage = 'Notification received';
-    console.log(notificationMessage);
-    
+// Function to cache notifications
+const cacheNotification = async (key, notification) => {
+  try {
+    // Store notification with a TTL (expiration time)
+    await redisClient.setEx(key, CACHE_EXPIRATION, notification);
+    console.log(`Notification cached with key: ${key}`);
+  } catch (err) {
+    console.error('Error caching notification:', err);
+  }
+};
+
+// Function to check cache
+const getCachedNotification = async (key) => {
+  try {
+    const cachedNotification = await redisClient.get(key);
+    if (cachedNotification) {
+      console.log(`Cache hit for key: ${key}`);
+    }
+    return cachedNotification;
+  } catch (err) {
+    console.error('Error fetching from cache:', err);
+    return null;
+  }
+};
+
+// Expose an endpoint to log "Notification received" and store in Redis cache
+app.post('/notify-login', async (req, res) => {
+    const notificationMessage = 'Login Succesful';
+    const cacheKey = 'notify-login';
+
+    // Check if the notification is already cached
+    const cachedNotification = await getCachedNotification(cacheKey);
+    if (cachedNotification) {
+        return res.status(200).json({ message: `Cached: ${cachedNotification}` });
+    }
+
     // Optionally notify connected WebSocket clients
     notifyAllClients(notificationMessage);
 
-    // Store the notification in Redis (using a list)
-    const timestamp = new Date().toISOString();
-    try {
-        const result = await redisClient.lPush('notifications', `${timestamp}: ${notificationMessage}`);
-        console.log(`Notification stored in Redis. Redis list length: ${result}`);
-        res.status(200).json({ message: 'Notification received and stored successfully.' });
-    } catch (err) {
-        console.error('Error storing notification in Redis:', err);
-        res.status(500).json({ error: 'Failed to store notification' });
+    // Cache the notification
+    await cacheNotification(cacheKey, notificationMessage);
+
+    res.status(200).json({ message: 'Login notification received and cached successfully.' });
+});
+
+app.post('/notify-signup', async (req, res) => {
+    const notificationMessage = 'Signup Succesful';
+    const cacheKey = 'notify-signup';
+
+    // Check if the notification is already cached
+    const cachedNotification = await getCachedNotification(cacheKey);
+    if (cachedNotification) {
+        return res.status(200).json({ message: `Cached: ${cachedNotification}` });
     }
+
+    // Optionally notify connected WebSocket clients
+    notifyAllClients(notificationMessage);
+
+    // Cache the notification
+    await cacheNotification(cacheKey, notificationMessage);
+
+    res.status(200).json({ message: 'Signup notification received and cached successfully.' });
+});
+
+app.post('/notify-upload', async (req, res) => {
+    const notificationMessage = 'Beat was uploaded successfully';
+    const cacheKey = 'notify-upload';
+
+    // Check if the notification is already cached
+    const cachedNotification = await getCachedNotification(cacheKey);
+    if (cachedNotification) {
+        return res.status(200).json({ message: `Cached: ${cachedNotification}` });
+    }
+
+    // Optionally notify connected WebSocket clients
+    notifyAllClients(notificationMessage);
+
+    // Cache the notification
+    await cacheNotification(cacheKey, notificationMessage);
+
+    res.status(200).json({ message: 'Upload notification received and cached successfully.' });
 });
 
 // Start the server

@@ -25,6 +25,15 @@ TIMEOUT = 10  # 10 seconds timeout for all requests
 @limiter.limit("15 per minute")
 def proxy_user_file_service(path):
     service_url = f"{USER_FILE_SERVICE}/user/{path}"
+    
+    # Prepare the notification URL based on the user action
+    if path == 'signup':
+        notification_url = f"{NOTIFICATION_SERVICE}/notify-signup"
+    elif path == 'login':
+        notification_url = f"{NOTIFICATION_SERVICE}/notify-login"
+    else:
+        notification_url = None
+
     try:
         # Forward the request based on its HTTP method
         if request.method == 'GET':
@@ -37,6 +46,16 @@ def proxy_user_file_service(path):
             response = requests.delete(service_url, timeout=TIMEOUT)
         
         print("Request Accepted", flush=True)
+
+        # If the user action is login or signup and was successful, notify the notification service
+        if response.status_code in [200, 201] and notification_url:
+            print(f"Notifying notification service for {path}...", flush=True)
+            notify_response = requests.post(notification_url, timeout=TIMEOUT)
+            
+            if notify_response.status_code == 200:
+                print(f"{path.capitalize()} notification sent successfully", flush=True)
+            else:
+                print(f"Failed to send {path} notification", flush=True)
         
         # Return the response from the user-file service
         return (response.content, response.status_code, response.headers.items())
@@ -91,22 +110,22 @@ def proxy_beat_upload():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/notify-upload', methods=['POST'])
-def proxy_notify_upload():
-    service_url = f"{NOTIFICATION_SERVICE}/notify-upload"
-    try:
-        # Send a simple notification request to the notification service
-        response = requests.post(service_url, timeout=TIMEOUT)
-        return (response.content, response.status_code, response.headers.items())
-    except requests.exceptions.Timeout:
-        return jsonify({"error": "Request timed out"}), 504
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), 500
+# @app.route('/notify-upload', methods=['POST'])
+# def proxy_notify_upload():
+#     service_url = f"{NOTIFICATION_SERVICE}/notify-upload"
+#     try:
+#         # Send a simple notification request to the notification service
+#         response = requests.post(service_url, timeout=TIMEOUT)
+#         return (response.content, response.status_code, response.headers.items())
+#     except requests.exceptions.Timeout:
+#         return jsonify({"error": "Request timed out"}), 504
+#     except requests.exceptions.RequestException as e:
+#         return jsonify({"error": str(e)}), 500
     
-# Error handler for rate limits
-@app.errorhandler(429)
-def ratelimit_handler(e):
-    return jsonify(error="rate limit exceeded"), 429
+# # Error handler for rate limits
+# @app.errorhandler(429)
+# def ratelimit_handler(e):
+#     return jsonify(error="rate limit exceeded"), 429
 
 
 # Start the Flask API Gateway
